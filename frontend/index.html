@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>A-MCTP · Audio Morse Code Translation Platform</title>
+<meta name="description" content="Decode Morse code from audio in real time or from an uploaded recording, with unsupervised ML timing analysis." />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="css/style.css" />
+<script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body>
+
+<!-- ============ HEADER ============ -->
+<header class="site-header">
+  <div class="app-shell" style="padding-top:0.85rem; padding-bottom:0.85rem;">
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap;">
+      <div style="display:flex; align-items:center; gap:0.65rem;">
+        <div class="brand-mark"><i data-lucide="radio-tower"></i></div>
+        <div>
+          <div class="brand-title">A-MCTP</div>
+          <div class="brand-sub">Audio Morse Code Translation Platform</div>
+        </div>
+      </div>
+
+      <div id="auth-panel" style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+        <input id="auth-username" placeholder="Operator handle" title="Your username — pick anything, e.g. a callsign" style="width:150px;" />
+        <input id="auth-password" placeholder="Passphrase" type="password" title="At least 6 characters" style="width:130px;" />
+        <button id="login-btn" class="btn-secondary" title="Sign in to an existing account"><i data-lucide="log-in"></i> Sign in</button>
+        <button id="register-btn" class="btn-secondary" title="Create a new account with this handle + passphrase"><i data-lucide="user-plus"></i> Create account</button>
+        <button id="logout-btn" class="btn-secondary" title="Sign out and return to anonymous mode"><i data-lucide="log-out"></i></button>
+        <span id="auth-status" style="font-size:0.76rem; color:var(--ink-faint); font-family:var(--font-mono);"></span>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- ============ HERO ============ -->
+<section class="hero">
+  <span class="hero-eyebrow"><i data-lucide="waves" style="width:12px;height:12px;"></i> DSP + unsupervised ML, end to end</span>
+  <h1>Hear the code.<br />Read the words.</h1>
+  <p class="lede">
+    Upload a recording or open your microphone. A-MCTP filters the tone,
+    measures every dot and dash, and lets K-Means clustering — not a
+    hard-coded speed — figure out what you actually sent.
+  </p>
+
+  <div class="keyer-lamp-row" aria-hidden="true">
+    <div class="keyer-lamp"><span class="keyer-lamp-core"></span></div>
+    <span class="keyer-caption">Keyer lamp · sending "SOS" on loop</span>
+  </div>
+</section>
+
+<!-- ============ APP SHELL ============ -->
+<main class="app-shell">
+  <div class="grid-shell">
+
+    <!-- ============ LEFT: CONTROL CONSOLE ============ -->
+    <aside style="display:flex; flex-direction:column; gap:1.25rem;">
+
+      <!-- Input mode -->
+      <div class="glass panel">
+        <div class="panel-title"><i data-lucide="sliders-horizontal"></i> Input source</div>
+        <p class="panel-subtitle">Choose whether to decode a saved recording or listen live through your microphone.</p>
+        <div class="mode-toggle-track">
+          <div class="mode-toggle-glider" id="mode-glider"></div>
+          <div id="mode-batch" class="mode-toggle"><i data-lucide="file-audio"></i> Batch file</div>
+          <div id="mode-live" class="mode-toggle"><i data-lucide="mic"></i> Live mic</div>
+        </div>
+      </div>
+
+      <!-- Frequency tuning -->
+      <div class="glass panel">
+        <div class="panel-title"><i data-lucide="radio"></i> Frequency tuning</div>
+        <p class="panel-subtitle">Sets the bandpass filter that isolates the CW tone from background noise before any decoding happens.</p>
+
+        <div class="field-group">
+          <label class="field-label" for="low-hz"><i data-lucide="arrow-down-narrow-wide"></i> Low cutoff (Hz)</label>
+          <input id="low-hz" type="number" value="700" placeholder="e.g. 700" />
+          <p class="field-help">Frequencies below this are filtered out. Lower it if your tone sits deeper than a typical CW pitch.</p>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label" for="high-hz"><i data-lucide="arrow-up-narrow-wide"></i> High cutoff (Hz)</label>
+          <input id="high-hz" type="number" value="800" placeholder="e.g. 800" />
+          <p class="field-help">Frequencies above this are filtered out. Widen the gap between the two cutoffs if the pitch drifts during the recording; narrow it for a cleaner, quieter signal.</p>
+        </div>
+      </div>
+
+      <!-- Translation history -->
+      <div class="glass panel">
+        <div class="panel-title"><i data-lucide="history"></i> Translation history</div>
+        <p class="panel-subtitle">Every file you've decoded while signed in, newest first. Sign in above to start building this list.</p>
+        <ul id="history-list" style="list-style:none; margin:0; padding:0;"></ul>
+      </div>
+
+      <!-- Reverse synthesis -->
+      <div class="glass panel">
+        <div class="panel-title"><i data-lucide="audio-lines"></i> Reverse synthesis</div>
+        <p class="panel-subtitle">Turn typed text back into an audible Morse tone — handy for generating test clips or practicing your ear.</p>
+
+        <div class="field-group">
+          <label class="field-label" for="synth-text"><i data-lucide="type"></i> Text to convert</label>
+          <input id="synth-text" placeholder="e.g. HELLO WORLD" />
+          <p class="field-help">Letters, numbers, and common punctuation are supported. Unsupported characters are skipped.</p>
+        </div>
+
+        <div style="display:flex; gap:0.6rem;">
+          <div class="field-group" style="flex:1;">
+            <label class="field-label" for="synth-wpm"><i data-lucide="gauge"></i> Speed (WPM)</label>
+            <input id="synth-wpm" type="number" value="20" placeholder="20" />
+            <p class="field-help">Words per minute — higher is faster keying.</p>
+          </div>
+          <div class="field-group" style="flex:1;">
+            <label class="field-label" for="synth-freq"><i data-lucide="audio-waveform"></i> Tone (Hz)</label>
+            <input id="synth-freq" type="number" value="750" placeholder="750" />
+            <p class="field-help">Pitch of the generated tone.</p>
+          </div>
+        </div>
+
+        <button id="synth-btn" class="btn" style="width:100%; margin-top:0.4rem;"><i data-lucide="play"></i> Synthesize &amp; play</button>
+        <audio id="synth-audio" controls style="width:100%; margin-top:0.7rem; height:34px;"></audio>
+      </div>
+    </aside>
+
+    <!-- ============ RIGHT: MAIN CANVAS ============ -->
+    <div style="display:flex; flex-direction:column; gap:1.25rem;">
+
+      <!-- Batch panel -->
+      <section id="batch-panel" class="glass panel">
+        <div class="panel-title"><i data-lucide="file-audio"></i> Batch file decoder</div>
+        <p class="panel-subtitle">Upload a .wav, .mp3, or .ogg recording containing Morse code. It's queued for background processing, so you can watch progress live below.</p>
+
+        <div class="field-group">
+          <label class="field-label" for="file-input"><i data-lucide="upload"></i> Audio file</label>
+          <div style="display:flex; gap:0.6rem;">
+            <input id="file-input" type="file" accept=".wav,.mp3,.ogg" style="flex:1;" />
+            <button id="upload-btn" class="btn"><i data-lucide="send"></i> Decode</button>
+          </div>
+          <p class="field-help">Max 25MB. Try a file from <code>sample_audio/</code> first if you're not sure this is wired up correctly.</p>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label"><i data-lucide="loader-circle"></i> Processing status</label>
+          <div class="progress-track"><div id="progress-bar"></div></div>
+          <p id="progress-label" class="field-help">Waiting for a file…</p>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label"><i data-lucide="activity"></i> Waveform &amp; symbol overlay</label>
+          <canvas id="waveform-canvas" width="900" height="180"></canvas>
+          <p class="field-help">Green = dot, amber = dash, grey = letter gap, red = word gap — drawn against the actual audio waveform.</p>
+        </div>
+
+        <div style="display:flex; justify-content:space-between; align-items:center; margin:1rem 0 0.6rem; flex-wrap:wrap; gap:0.5rem;">
+          <span class="readout-chip"><i data-lucide="gauge"></i> Estimated speed: <span id="wpm-label" class="readout-value">--</span></span>
+          <div style="display:flex; gap:0.5rem;">
+            <button id="copy-batch-btn" class="icon-btn" title="Copy decoded text"><i data-lucide="copy"></i></button>
+            <a id="export-txt" class="btn-secondary" href="#" title="Download as plain text"><i data-lucide="file-text"></i> .txt</a>
+            <a id="export-csv" class="btn-secondary" href="#" title="Download as spreadsheet-ready CSV"><i data-lucide="table"></i> .csv</a>
+            <a id="export-pdf" class="btn-secondary" href="#" title="Download as a formatted PDF report"><i data-lucide="file-down"></i> .pdf</a>
+          </div>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label"><i data-lucide="terminal"></i> Decoded text</label>
+          <div id="terminal-output" class="terminal"></div>
+        </div>
+      </section>
+
+      <!-- Live panel -->
+      <section id="live-panel" class="glass panel hidden">
+        <div class="panel-title"><i data-lucide="mic"></i> Live microphone decoder</div>
+        <p class="panel-subtitle">Streams your mic audio to the server in ~30ms chunks. It decodes automatically after roughly 1.4 seconds of silence — a natural word boundary — so pause briefly between words.</p>
+
+        <div style="display:flex; align-items:center; gap:0.75rem; margin-bottom:1rem;">
+          <button id="start-live-btn" class="btn"><i data-lucide="mic"></i> Start listening</button>
+          <button id="stop-live-btn" class="btn-secondary" disabled><i data-lucide="square"></i> Stop</button>
+          <span style="display:flex; align-items:center; gap:0.4rem; margin-left:auto;">
+            <span id="live-indicator" class="live-dot"></span>
+            <span style="font-size:0.74rem; color:var(--ink-faint); font-family:var(--font-mono);">mic status</span>
+          </span>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label"><i data-lucide="activity"></i> Live frequency waterfall</label>
+          <canvas id="waterfall-canvas" width="900" height="160"></canvas>
+          <p class="field-help">Scrolls right to left. Brighter/warmer color = stronger signal at that frequency, right now.</p>
+        </div>
+
+        <div style="display:flex; justify-content:space-between; align-items:center; margin:1rem 0 0.6rem;">
+          <span class="readout-chip"><i data-lucide="gauge"></i> Estimated speed: <span id="live-wpm-label" class="readout-value">--</span></span>
+          <button id="copy-live-btn" class="icon-btn" title="Copy live transcript"><i data-lucide="copy"></i></button>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label"><i data-lucide="terminal"></i> Live transcript</label>
+          <div id="live-terminal" class="terminal"></div>
+        </div>
+      </section>
+
+    </div>
+  </div>
+
+  <p class="footnote">A-MCTP — built for a 6-credit end-sem project. FastAPI · Celery · Redis · NumPy/SciPy · scikit-learn.</p>
+</main>
+
+<script src="js/api.js"></script>
+<script src="js/waveform.js"></script>
+<script src="js/waterfall.js"></script>
+<script src="js/audio-capture.js"></script>
+<script src="js/websocket-client.js"></script>
+<script src="js/synth.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
