@@ -263,13 +263,31 @@ function showLensEmpty() {
 
 function renderSignalLens(result) {
   const events = result.events || [];
-  const dots = events.filter((event) => event.kind === "dot").length;
-  const dashes = events.filter((event) => event.kind === "dash").length;
-  const elementGaps = events.filter((event) => event.kind === "element_gap").length;
-  const letterGaps = events.filter((event) => event.kind === "letter_gap").length;
-  const wordGaps = events.filter((event) => event.kind === "word_gap").length;
+  let dots = events.filter((event) => event.kind === "dot").length;
+  let dashes = events.filter((event) => event.kind === "dash").length;
+  let elementGaps = events.filter((event) => event.kind === "element_gap").length;
+  let letterGaps = events.filter((event) => event.kind === "letter_gap").length;
+  let wordGaps = events.filter((event) => event.kind === "word_gap").length;
+  let haveEvents = events.length > 0;
+
+  const stream = result.symbol_stream || "";
+  
+  // Fix the split logic: Morse words are separated by " / "
+  const streamWords = stream.split(" / ").filter(Boolean);
+  // Morse letters inside words are separated by single spaces " "
+  const streamLetters = stream.split(" ").filter(ch => ch && ch !== "/");
+  
+  const streamDots = (stream.match(/\./g) || []).length;
+  const streamDashes = (stream.match(/-/g) || []).length;
+
+  if (!haveEvents && stream) {
+    dots = streamDots;
+    dashes = streamDashes;
+    // Standard calculation rules for explicit stream gaps
+    wordGaps = Math.max(0, streamWords.length - 1);
+    letterGaps = Math.max(0, streamLetters.length - streamWords.length);
+  }
   const totalSymbols = dots + dashes;
-  const totalGaps = elementGaps + letterGaps + wordGaps;
 
   document.getElementById("lens-empty").classList.add("hidden");
   document.getElementById("lens-results").classList.remove("hidden");
@@ -291,13 +309,14 @@ function renderSignalLens(result) {
   setLensStatus("mapped", "Signal mapped");
   document.getElementById("lens-wpm").textContent = result.wpm_estimate ? `${result.wpm_estimate}` : "--";
   document.getElementById("lens-symbols").textContent = `${totalSymbols}`;
-  document.getElementById("lens-words").textContent = `${wordGaps + 1}`;
+  
+  // Calculate total words correctly regardless of whether data comes from events or stream fallback
+  const totalWords = streamWords.length || 1;
+  document.getElementById("lens-words").textContent = `${totalWords}`;
 
   const timeline = document.getElementById("lens-timeline");
   timeline.innerHTML = "";
-  if (events.length === 0) {
-    timeline.innerHTML = '<span style="color:var(--ink-faint);font-size:0.82rem;">No discrete pulses were detected — the signal may be silent or outside the filter band.</span>';
-  } else {
+  if (haveEvents) {
     events.forEach((event) => {
       const segment = document.createElement("span");
       segment.className = `lens-segment ${event.kind}`;
@@ -307,16 +326,42 @@ function renderSignalLens(result) {
       segment.style.setProperty("--segment-width", `${duration}px`);
       timeline.appendChild(segment);
     });
+  } else if (stream) {
+    // Fixed: We parse gaps directly instead of skipping spaces entirely
+    // By matching chunks of dots/dashes, slashes, or individual spaces
+    const tokens = stream.match(/\.|-|\s\/\s|\s/g) || [];
+    
+    tokens.forEach((token) => {
+      let kind = "dot";
+      if (token === "-") kind = "dash";
+      else if (token === " / ") kind = "word_gap";
+      else if (token === " ") kind = "letter_gap";
+      
+      const segment = document.createElement("span");
+      segment.className = `lens-segment ${kind}`;
+      segment.title = kind.replace(/_/g, " ");
+      timeline.appendChild(segment);
+    });
+  } else {
+    timeline.innerHTML = '<span style="color:var(--ink-faint);font-size:0.82rem;">No discrete pulses were detected — the signal may be silent or outside the filter band.</span>';
   }
 
   const text = result.decoded_text && result.decoded_text.trim() ? result.decoded_text.trim() : "no readable text";
-  const stream = result.symbol_stream ? ` (symbol stream “${result.symbol_stream}”)` : "";
+  const streamNote = stream ? ` (symbol stream “${stream}”)` : "";
   const wpmNote = result.wpm_estimate ? ` at approximately ${result.wpm_estimate} WPM` : "";
-  document.getElementById("lens-explanation").innerHTML =
-    `<strong>Signal Lens</strong> found ${dots} short pulse${dots === 1 ? "" : "s"} and ${dashes} long pulse${dashes === 1 ? "" : "s"}, ` +
-    `separated by ${letterGaps} letter gap${letterGaps === 1 ? "" : "s"} and ${wordGaps} word gap${wordGaps === 1 ? "" : "s"}` +
-    `${totalGaps ? ` (plus ${elementGaps} intra-letter gaps)` : ""}. ` +
-    `K-Means clustering on those durations — not a fixed speed table — resolved them to “${text}”${stream}${wpmNote}.`;
+  const sourceNote = haveEvents
+    ? "K-Means clustering on those durations"
+    : "the unsupervised timing model";
+    
+  if (totalSymbols === 0 && !stream) {
+    document.getElementById("lens-explanation").textContent =
+      "No tone activity was detected in this signal. Check the frequency band and signal-to-noise ratio of the recording.";
+  } else {
+    document.getElementById("lens-explanation").innerHTML =
+      `<strong>Signal Lens</strong> found ${dots} short pulse${dots === 1 ? "" : "s"} and ${dashes} long pulse${dashes === 1 ? "" : "s"}, ` +
+      `separated by ${letterGaps} letter gap${letterGaps === 1 ? "" : "s"} and ${wordGaps} word gap${wordGaps === 1 ? "" : "s"}. ` +
+      `${sourceNote} — not a fixed speed table — resolved them to “${text}”${streamNote}${wpmNote}.`;
+  }
   if (window.lucide) lucide.createIcons();
 }
 
@@ -348,6 +393,7 @@ startLiveBtn.addEventListener("click", async () => {
     onWaterfall: (bins) => waterfall.pushFrame(bins),
     onPartialResult: (msg) => {
       liveTerminal.textContent = msg.accumulated_text || "";
+      liveTerminal.classList.toggle("live-preview", Boolean(msg.interim));
       if (msg.wpm_estimate) liveWpmLabel.textContent = `${msg.wpm_estimate} WPM`;
     },
   });
