@@ -87,13 +87,6 @@
         </div>
       </div>
 
-      <!-- Translation history -->
-      <div class="glass panel">
-        <div class="panel-title"><i data-lucide="history"></i> Translation history</div>
-        <p class="panel-subtitle">Every file you've decoded while signed in, newest first. Sign in above to start building this list.</p>
-        <ul id="history-list" style="list-style:none; margin:0; padding:0;"></ul>
-      </div>
-
       <!-- Reverse synthesis -->
       <div class="glass panel">
         <div class="panel-title"><i data-lucide="audio-lines"></i> Reverse synthesis</div>
@@ -199,11 +192,96 @@
         </div>
       </section>
 
+      <!-- Signal Lens: turns the decoder's timing events into an explorable explanation -->
+      <section id="signal-lens" class="glass panel signal-lens">
+        <div class="lens-heading">
+          <div>
+            <span class="lens-kicker"><i data-lucide="scan-line"></i> A-MCTP Signal Lens</span>
+            <div class="panel-title"><i data-lucide="sparkles"></i> See why the message was decoded</div>
+            <p id="lens-subtitle" class="panel-subtitle">Upload a signal and this panel will map its dots, dashes, and gaps into an explainable decoding story.</p>
+          </div>
+          <span id="lens-status" class="lens-status"><i data-lucide="circle-dot-dashed"></i> Awaiting signal</span>
+        </div>
+        <div id="lens-empty" class="lens-empty">
+          <div class="lens-orb"><i data-lucide="radio-tower"></i></div>
+          <div><strong>Your signal, made legible.</strong><p>Signal Lens visualizes the timing patterns that the decoder uses—not just the final text.</p></div>
+        </div>
+        <div id="lens-results" class="hidden">
+          <div class="lens-metrics">
+            <div class="lens-metric"><span>Detected WPM</span><strong id="lens-wpm">--</strong></div>
+            <div class="lens-metric"><span>Symbols found</span><strong id="lens-symbols">--</strong></div>
+            <div class="lens-metric"><span>Word gaps</span><strong id="lens-words">--</strong></div>
+          </div>
+          <div class="lens-timeline-wrap"><div class="lens-label"><span><i data-lucide="git-commit-horizontal"></i> Timing map</span><span>short pulse · long pulse · pauses</span></div><div id="lens-timeline" class="lens-timeline"></div></div>
+          <div class="lens-insight"><i data-lucide="brain-circuit"></i><p id="lens-explanation"></p></div>
+        </div>
+      </section>
+
     </div>
+
+    <!-- ============ RIGHT: TRANSLATION HISTORY ============ -->
+    <aside class="history-column">
+      <div class="glass panel history-panel">
+        <div class="panel-title"><i data-lucide="history"></i> Translation history</div>
+        <p class="panel-subtitle">Every file you've decoded while signed in, newest first. Sign in above to start building this list.</p>
+        <ul id="history-list" class="history-list"></ul>
+      </div>
+    </aside>
+
   </div>
 
   <p class="footnote">A-MCTP — built for a 6-credit end-sem project. FastAPI · Celery · Redis · NumPy/SciPy · scikit-learn.</p>
 </main>
+
+<div id="auth-modal" class="auth-modal hidden" role="dialog" aria-modal="true" aria-labelledby="auth-modal-title">
+  <div class="auth-backdrop" data-auth-close></div>
+  <section class="auth-card glass">
+    <button id="close-auth-btn" class="auth-close icon-btn" aria-label="Close sign in dialog"><i data-lucide="x"></i></button>
+    <div class="auth-symbol"><i data-lucide="radio-tower"></i></div>
+    <p class="auth-kicker">Operator access</p>
+    <h2 id="auth-modal-title">Welcome back</h2>
+    <p id="auth-modal-copy" class="auth-copy">Sign in to keep your decoded transmissions together.</p>
+    <form id="auth-form">
+      <label class="field-label" for="modal-auth-username"><i data-lucide="user-round"></i> Operator handle</label>
+      <input id="modal-auth-username" autocomplete="username" placeholder="e.g. echo-7" required />
+      <label class="field-label auth-password-label" for="modal-auth-password"><i data-lucide="key-round"></i> Passphrase</label>
+      <div class="password-wrap">
+        <input id="modal-auth-password" autocomplete="current-password" placeholder="At least 6 characters" type="password" required minlength="6" />
+        <button id="toggle-password-btn" class="password-toggle" type="button" aria-label="Show passphrase"><i data-lucide="eye"></i></button>
+      </div>
+      <p id="auth-error" class="auth-error" role="alert"></p>
+      <button id="auth-submit-btn" class="btn auth-submit" type="submit"><i data-lucide="log-in"></i> Sign in</button>
+    </form>
+    <p class="auth-switch"><span id="auth-switch-copy">New to A-MCTP?</span> <button id="auth-switch-btn" type="button">Create an account</button></p>
+  </section>
+</div>
+
+<div id="profile-modal" class="auth-modal hidden" role="dialog" aria-modal="true" aria-labelledby="profile-title">
+  <div class="auth-backdrop" data-profile-close></div>
+  <section class="profile-card glass">
+    <button id="close-profile-btn" class="auth-close icon-btn" aria-label="Close profile"><i data-lucide="x"></i></button>
+    <div class="profile-hero">
+      <div id="profile-avatar" class="profile-avatar">OP</div>
+      <div><p class="auth-kicker">Operator profile</p><h2 id="profile-title">Your signal identity</h2><p id="profile-username" class="profile-username"></p></div>
+    </div>
+    <form id="profile-form">
+      <div class="profile-fields">
+        <div><label class="field-label" for="profile-display-name"><i data-lucide="badge"></i> Display name</label><input id="profile-display-name" maxlength="48" placeholder="Your display name" /></div>
+        <div><label class="field-label" for="profile-callsign"><i data-lucide="radio"></i> Callsign</label><input id="profile-callsign" maxlength="24" placeholder="e.g. VU2ABC" /></div>
+      </div>
+      <label class="field-label" for="profile-bio"><i data-lucide="message-square-text"></i> Operator note</label>
+      <textarea id="profile-bio" maxlength="280" placeholder="A little about your Morse journey..."></textarea>
+      <div class="profile-settings"><span><i data-lucide="sliders-horizontal"></i> Preferred decoder settings</span></div>
+      <div class="profile-fields profile-preferences">
+        <div><label class="field-label" for="profile-wpm">Speed (WPM)</label><input id="profile-wpm" type="number" min="5" max="60" value="20" /></div>
+        <div><label class="field-label" for="profile-low-hz">Low cutoff</label><input id="profile-low-hz" type="number" min="100" max="3000" value="700" /></div>
+        <div><label class="field-label" for="profile-high-hz">High cutoff</label><input id="profile-high-hz" type="number" min="100" max="3000" value="800" /></div>
+      </div>
+      <p id="profile-error" class="auth-error" role="alert"></p>
+      <button id="profile-save-btn" class="btn auth-submit" type="submit"><i data-lucide="save"></i> Save profile</button>
+    </form>
+  </section>
+</div>
 
 <script src="js/api.js"></script>
 <script src="js/waveform.js"></script>

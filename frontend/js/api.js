@@ -72,6 +72,22 @@ const Api = {
     return res.json();
   },
 
+  async getProfile() {
+    const res = await fetch(`${API_BASE}/api/v1/profile`, { headers: this.headers() });
+    if (!res.ok) throw new Error((await res.json()).detail || "Could not fetch profile");
+    return res.json();
+  },
+
+  async updateProfile(profile) {
+    const res = await fetch(`${API_BASE}/api/v1/profile`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...this.headers() },
+      body: JSON.stringify(profile),
+    });
+    if (!res.ok) throw new Error((await res.json()).detail || "Could not save profile");
+    return res.json();
+  },
+
   exportUrl(jobId, format) {
     return `${API_BASE}/api/v1/export/${jobId}?format=${format}`;
   },

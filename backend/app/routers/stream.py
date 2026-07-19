@@ -2,6 +2,7 @@ import json
 
 import numpy as np
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+import asyncio
 
 from ..dsp import decoder, features, preprocessing
 
@@ -13,12 +14,18 @@ MAX_BUFFER_S = 12.0         # hard cap so a stuck connection can't grow unbounde
 WATERFALL_FFT_SIZE = 512
 
 
+INTERIM_DECODE_S = 1.0         # re-decode the rolling buffer at least this often
+INTERIM_MIN_TONE_S = 0.15       # ignore sub-second blips for interim previews
+
+
 class StreamSession:
     """Per-connection rolling state for the live decoder."""
 
     def __init__(self):
         self.buffer = np.zeros(0, dtype=np.float32)
         self.accumulated_text = ""
+        self._last_interim_s = 0.0
+        self._committed_buffer_len = 0
 
     def append(self, chunk: np.ndarray):
         self.buffer = np.concatenate([self.buffer, chunk])
@@ -27,9 +34,18 @@ class StreamSession:
             self.buffer = self.buffer[-max_len:]
 
     def trailing_silence_s(self) -> float:
-        if len(self.buffer) < SAMPLE_RATE // 10:
+        # Calculate exactly how many samples we need to look back:
+        # FLUSH_SILENCE_S + 50ms edge guard + a small buffer margin (e.g., 200ms)
+        lookback_s = FLUSH_SILENCE_S + 0.05 + 0.20
+        lookback_samples = int(lookback_s * SAMPLE_RATE)
+
+        if len(self.buffer) < lookback_samples:
             return 0.0
-        clean = preprocessing.preprocess(self.buffer, SAMPLE_RATE)
+
+        # ONLY process the tail end of the buffer!
+        tail_buffer = self.buffer[-lookback_samples:]
+
+        clean = preprocessing.preprocess(tail_buffer, SAMPLE_RATE)
         env = features.smooth(features.envelope_hilbert(clean), SAMPLE_RATE)
         mask = features.adaptive_threshold(env, SAMPLE_RATE)
 
@@ -39,20 +55,33 @@ class StreamSession:
         # even during real silence. Skip that guard band before scanning.
         edge_guard = int(0.05 * SAMPLE_RATE)  # 50ms
         scan_end = len(mask) - 1 - edge_guard
-        if scan_end < 0:
+        if scan_end < 0 or mask[scan_end]:
             return 0.0
-        if mask[scan_end]:
-            return 0.0
+
         idx = scan_end
         count = 0
         while idx >= 0 and not mask[idx]:
             count += 1
             idx -= 1
+
         return count / SAMPLE_RATE
+
+    def _append_text(self, new_text: str):
+        if new_text:
+            self.accumulated_text += (" " if self.accumulated_text else "") + new_text
+
+    def interim_decode(self) -> decoder.DecodeResult:
+        """Live preview: decode the rolling buffer WITHOUT clearing it, so the
+        operator sees the message build up in real time as they key. The
+        trailing, not-yet-terminated word is intentionally included as a
+        provisional preview."""
+        return decoder.decode_audio(self.buffer, SAMPLE_RATE)
 
     def flush_and_decode(self) -> decoder.DecodeResult:
         result = decoder.decode_audio(self.buffer, SAMPLE_RATE)
         self.buffer = np.zeros(0, dtype=np.float32)
+        self._committed_buffer_len = 0
+        self._last_interim_s = 0.0
         return result
 
 
@@ -83,6 +112,10 @@ async def decode_stream(websocket: WebSocket):
     try:
         while True:
             message = await websocket.receive()
+            # Starlette delivers a disconnect event as a normal receive
+            # message. Exit immediately so a second receive is never made.
+            if message.get("type") == "websocket.disconnect":
+                break
             if "bytes" in message and message["bytes"] is not None:
                 chunk = pcm16_bytes_to_float(message["bytes"])
                 session.append(chunk)
@@ -92,18 +125,40 @@ async def decode_stream(websocket: WebSocket):
                     "bins": waterfall_frame(chunk),
                 }))
 
+                # Real-time feel: while audio is flowing, re-decode the rolling
+                # buffer on a throttle so the operator sees the message build
+                # up live (the trailing word is a provisional preview).
+                now_s = len(session.buffer) / SAMPLE_RATE
                 silence_s = session.trailing_silence_s()
-                if silence_s >= FLUSH_SILENCE_S and len(session.buffer) > SAMPLE_RATE // 4:
-                    result = session.flush_and_decode()
-                    if result.text:
-                        session.accumulated_text += (" " if session.accumulated_text else "") + result.text
-                    await websocket.send_text(json.dumps({
-                        "type": "partial_result",
-                        "new_text": result.text,
-                        "accumulated_text": session.accumulated_text,
-                        "wpm_estimate": result.wpm_estimate,
-                        "warning": result.warning,
-                    }))
+
+                if silence_s < FLUSH_SILENCE_S:
+                    if now_s - session._last_interim_s >= INTERIM_DECODE_S and len(session.buffer) > SAMPLE_RATE // 4:
+                        result = await asyncio.to_thread(session.interim_decode)
+                        if result.text:
+                            await websocket.send_text(json.dumps({
+                                "type": "partial_result",
+                                "new_text": result.text,
+                                "accumulated_text": session.accumulated_text + (" " if session.accumulated_text else "") + result.text,
+                                "wpm_estimate": result.wpm_estimate,
+                                "warning": result.warning,
+                                "interim": True,
+                            }))
+                        session._last_interim_s = now_s
+                else:
+                    # Sustained silence -> the current word/phrase is finished.
+                    # Commit the buffer exactly once, then clear it so we don't
+                    # re-flush on every subsequent silent chunk.
+                    if len(session.buffer) > SAMPLE_RATE // 4:
+                        result = await asyncio.to_thread(session.flush_and_decode)
+                        if result.text:
+                            session._append_text(result.text)
+                        await websocket.send_text(json.dumps({
+                            "type": "partial_result",
+                            "new_text": result.text,
+                            "accumulated_text": session.accumulated_text,
+                            "wpm_estimate": result.wpm_estimate,
+                            "warning": result.warning,
+                        }))
 
             elif "text" in message and message["text"] is not None:
                 # control messages, e.g. {"action": "flush"} to force a decode now

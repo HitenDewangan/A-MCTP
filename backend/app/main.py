@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
 from .database import init_db
-from .routers import auth, export, history, stream, synth, upload
+from .routers import auth, export, history, profile, stream, synth, upload
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -31,6 +31,7 @@ def health():
 
 
 app.include_router(auth.router)
+app.include_router(profile.router)
 app.include_router(upload.router)
 app.include_router(stream.router)
 app.include_router(history.router)

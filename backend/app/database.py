@@ -25,6 +25,23 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     jobs = relationship("TranslationJob", back_populates="owner", cascade="all, delete-orphan")
+    profile = relationship("UserProfile", back_populates="user", uselist=False, cascade="all, delete-orphan")
+
+
+class UserProfile(Base):
+    __tablename__ = "user_profiles"
+
+    id = Column(String, primary_key=True, default=_uuid)
+    user_id = Column(String, ForeignKey("users.id"), unique=True, nullable=False)
+    display_name = Column(String, nullable=True)
+    callsign = Column(String, nullable=True)
+    bio = Column(Text, nullable=True)
+    preferred_wpm = Column(Float, default=20.0)
+    low_hz = Column(Float, default=700.0)
+    high_hz = Column(Float, default=800.0)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user = relationship("User", back_populates="profile")
 
 
 class TranslationJob(Base):

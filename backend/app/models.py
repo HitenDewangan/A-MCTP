@@ -20,6 +20,20 @@ class Token(BaseModel):
     token_type: str = "bearer"
 
 
+class ProfileUpdate(BaseModel):
+    display_name: Optional[str] = Field(default=None, max_length=48)
+    callsign: Optional[str] = Field(default=None, max_length=24)
+    bio: Optional[str] = Field(default=None, max_length=280)
+    preferred_wpm: float = Field(default=20.0, ge=5, le=60)
+    low_hz: float = Field(default=700.0, ge=100, le=3000)
+    high_hz: float = Field(default=800.0, ge=100, le=3000)
+
+
+class ProfileOut(ProfileUpdate):
+    username: str
+    joined_at: datetime
+
+
 # --- Jobs ---
 class JobSubmitResponse(BaseModel):
     job_id: str
