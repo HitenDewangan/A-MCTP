@@ -29,11 +29,21 @@ def smooth(envelope: np.ndarray, sample_rate: int, window_ms: float = 4.0) -> np
     return np.convolve(envelope, kernel, mode="same")
 
 
+def noise_gate(envelope: np.ndarray, sample_rate: int, floor_percentile: float = 10) -> np.ndarray:
+    """
+    Suppress hiss and static by zeroing envelope samples that sit at or
+    below the estimated noise floor.  This gives the adaptive threshold
+    a cleaner input and prevents micro-flicker between real symbols.
+    """
+    noise_floor = np.percentile(envelope, floor_percentile)
+    return np.where(envelope > noise_floor, envelope, 0.0)
+
+
 def adaptive_threshold(
     envelope: np.ndarray,
     sample_rate: int,
     window_ms: float = 1500.0,
-    hysteresis: float = 0.08,
+    hysteresis: float = 0.12,
 ) -> np.ndarray:
     """
     Adaptive Schmitt-trigger threshold with hysteresis.
@@ -57,7 +67,7 @@ def adaptive_threshold(
     local_peak_full = np.interp(idx, np.arange(len(local_peak)), local_peak)
 
     noise_floor = np.percentile(envelope, 10)
-    threshold_mid = noise_floor + 0.35 * (local_peak_full - noise_floor)
+    threshold_mid = noise_floor + 0.45 * (local_peak_full - noise_floor)
     threshold_hi = threshold_mid * (1 + hysteresis)
     threshold_lo = threshold_mid * (1 - hysteresis)
 
@@ -97,7 +107,7 @@ def mask_to_pulses(mask: np.ndarray, sample_rate: int) -> List[Pulse]:
     return pulses
 
 
-def strip_micro_glitches(pulses: List[Pulse], min_duration_s: float = 0.012) -> List[Pulse]:
+def strip_micro_glitches(pulses: List[Pulse], min_duration_s: float = 0.015) -> List[Pulse]:
     """
     Merge sub-threshold-duration blips (sensor/quantization noise) into the
     neighbouring pulse so they don't get misread as legitimate dots.
@@ -120,3 +130,23 @@ def strip_micro_glitches(pulses: List[Pulse], min_duration_s: float = 0.012) -> 
         else:
             merged.append(pulse)
     return merged
+
+
+def prune_short_marks(pulses: List[Pulse], min_duration_s: float) -> List[Pulse]:
+    """
+    Remove tone pulses shorter than min_duration_s (residual micro-glitches
+    that survived earlier stripping), merging adjacent silence pulses so
+    the remaining pulse sequence stays valid.
+    """
+    if not pulses:
+        return pulses
+    pruned: List[Pulse] = []
+    for p in pulses:
+        if p.is_tone and p.duration_s < min_duration_s:
+            continue
+        if pruned and not pruned[-1].is_tone and not p.is_tone:
+            prev = pruned[-1]
+            pruned[-1] = Pulse(False, prev.duration_s + p.duration_s)
+        else:
+            pruned.append(p)
+    return pruned

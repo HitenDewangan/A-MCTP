@@ -40,6 +40,7 @@ def decode_audio(
 
     clean = preprocessing.preprocess(samples, sample_rate, low_hz, high_hz)
     envelope = features.smooth(features.envelope_hilbert(clean), sample_rate)
+    envelope = features.noise_gate(envelope, sample_rate)
     mask = features.adaptive_threshold(envelope, sample_rate)
     pulses = features.mask_to_pulses(mask, sample_rate)
     pulses = features.strip_micro_glitches(pulses)
@@ -63,6 +64,26 @@ def decode_audio(
 
     mark_clusters = clustering.cluster_marks(mark_pulses)
     dot_centroid = mark_clusters.centroids[0]
+
+    min_dot_s = max(0.35 * dot_centroid, 0.018)
+    pulses = features.prune_short_marks(pulses, min_dot_s)
+    if not pulses:
+        return DecodeResult(
+            text="", symbol_stream="", wpm_estimate=0.0,
+            warning="Not enough tone activity detected to decode. Check "
+                    "the frequency band and SNR of the recording.",
+        )
+
+    mark_pulses = [p for p in pulses if p.is_tone]
+    space_pulses = [p for p in pulses if not p.is_tone]
+
+    if len(mark_pulses) < 1:
+        return DecodeResult(
+            text="", symbol_stream="", wpm_estimate=0.0,
+            warning="Not enough tone activity detected to decode. Check "
+                    "the frequency band and SNR of the recording.",
+        )
+
     wpm = clustering.estimate_wpm(dot_centroid)
 
     gap_clusters = (
