@@ -42,11 +42,14 @@ const Api = {
     return res.json();
   },
 
-  async uploadAudio(file, lowHz, highHz) {
+  async uploadAudio(file, lowHz, highHz, autoDetect = true) {
     const form = new FormData();
     form.append("file", file);
-    if (lowHz != null) form.append("low_hz", lowHz);
-    if (highHz != null) form.append("high_hz", highHz);
+    form.append("auto_detect", autoDetect ? "true" : "false");
+    if (!autoDetect) {
+      if (lowHz != null) form.append("low_hz", lowHz);
+      if (highHz != null) form.append("high_hz", highHz);
+    }
     const res = await fetch(`${API_BASE}/api/v1/decode/upload`, {
       method: "POST",
       headers: this.headers(),

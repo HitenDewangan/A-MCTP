@@ -30,7 +30,7 @@ def _load_audio(filepath: str):
 
 
 @celery_app.task(bind=True, name="app.tasks.decode_upload_task")
-def decode_upload_task(self, job_id: str, filepath: str, low_hz: float = 700.0, high_hz: float = 800.0):
+def decode_upload_task(self, job_id: str, filepath: str, low_hz: float = None, high_hz: float = None):
     db = SessionLocal()
     try:
         job = db.query(TranslationJob).filter(TranslationJob.id == job_id).first()
@@ -51,6 +51,7 @@ def decode_upload_task(self, job_id: str, filepath: str, low_hz: float = 700.0, 
         job.decoded_text = result.text
         job.symbol_stream = result.symbol_stream
         job.wpm_estimate = result.wpm_estimate
+        job.detected_freq_hz = result.detected_freq_hz
         job.warning = result.warning
         job.completed_at = datetime.utcnow()
         db.commit()
@@ -61,6 +62,7 @@ def decode_upload_task(self, job_id: str, filepath: str, low_hz: float = 700.0, 
             "symbol_stream": result.symbol_stream,
             "wpm_estimate": result.wpm_estimate,
             "warning": result.warning,
+            "detected_freq_hz": result.detected_freq_hz,
             "events": [{"kind": e.kind, "start_s": e.start_s, "end_s": e.end_s} for e in result.events],
         }
     except Exception as exc:  # noqa: BLE001

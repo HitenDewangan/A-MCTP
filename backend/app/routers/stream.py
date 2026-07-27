@@ -45,7 +45,22 @@ class StreamSession:
         # ONLY process the tail end of the buffer!
         tail_buffer = self.buffer[-lookback_samples:]
 
-        clean = preprocessing.preprocess(tail_buffer, SAMPLE_RATE)
+        # This used to always filter a hardcoded 700-800 Hz band regardless
+        # of the tone's real frequency -- for any recording sent at a
+        # different pitch, this check was filtering pure noise/silence the
+        # entire time, which could make it flush constantly (or never).
+        # Auto-detect a single best-guess frequency here (cheap: one Welch
+        # PSD call, no multi-candidate decode retries needed just to find a
+        # band to look at) so silence detection tracks whatever tone is
+        # actually present, the same as the real decode does.
+        candidates = preprocessing.find_candidate_tone_frequencies(
+            tail_buffer, SAMPLE_RATE, n_candidates=1
+        )
+        f0 = candidates[0]
+        low_hz = max(20.0, f0 - decoder.AUTO_BANDWIDTH_HZ)
+        high_hz = f0 + decoder.AUTO_BANDWIDTH_HZ
+
+        clean = preprocessing.preprocess(tail_buffer, SAMPLE_RATE, low_hz, high_hz)
         env = features.smooth(features.envelope_hilbert(clean), SAMPLE_RATE)
         mask = features.adaptive_threshold(env, SAMPLE_RATE)
 
@@ -140,6 +155,7 @@ async def decode_stream(websocket: WebSocket):
                                 "new_text": result.text,
                                 "accumulated_text": session.accumulated_text + (" " if session.accumulated_text else "") + result.text,
                                 "wpm_estimate": result.wpm_estimate,
+                                "detected_freq_hz": result.detected_freq_hz,
                                 "warning": result.warning,
                                 "interim": True,
                             }))
@@ -157,6 +173,7 @@ async def decode_stream(websocket: WebSocket):
                             "new_text": result.text,
                             "accumulated_text": session.accumulated_text,
                             "wpm_estimate": result.wpm_estimate,
+                            "detected_freq_hz": result.detected_freq_hz,
                             "warning": result.warning,
                         }))
 
@@ -175,6 +192,7 @@ async def decode_stream(websocket: WebSocket):
                         "new_text": result.text,
                         "accumulated_text": session.accumulated_text,
                         "wpm_estimate": result.wpm_estimate,
+                        "detected_freq_hz": result.detected_freq_hz,
                         "warning": result.warning,
                     }))
                 elif control.get("action") == "reset":

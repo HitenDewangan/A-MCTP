@@ -53,6 +53,7 @@ class JobResultResponse(BaseModel):
     decoded_text: Optional[str] = None
     symbol_stream: Optional[str] = None
     wpm_estimate: Optional[float] = None
+    detected_freq_hz: Optional[float] = None
     warning: Optional[str] = None
     error: Optional[str] = None
     events: Optional[List[SymbolEventOut]] = None

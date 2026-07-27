@@ -62,6 +62,7 @@ class TranslationJob(Base):
     decoded_text = Column(Text, nullable=True)
     symbol_stream = Column(Text, nullable=True)
     wpm_estimate = Column(Float, nullable=True)
+    detected_freq_hz = Column(Float, nullable=True)
     warning = Column(Text, nullable=True)
     error = Column(Text, nullable=True)
 

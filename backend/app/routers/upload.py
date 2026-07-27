@@ -23,6 +23,7 @@ async def upload_audio(
     file: UploadFile = File(...),
     low_hz: float = Form(default=None),
     high_hz: float = Form(default=None),
+    auto_detect: bool = Form(default=True),
     db: Session = Depends(get_db),
     user: User | None = Depends(get_current_user_optional),
 ):
@@ -52,13 +53,17 @@ async def upload_audio(
     db.add(job)
     db.commit()
 
+    # auto_detect=True (the default) always wins, even if a stale low_hz/
+    # high_hz happens to be present in the form (e.g. from a saved profile)
+    # -- the frontend should stop sending them at all once the user enables
+    # auto-detect, but this is a safe belt-and-braces guard either way.
+    # Only an explicit auto_detect=False (the user deliberately typed a
+    # frequency and disabled auto mode) forwards a manual override.
+    effective_low = None if auto_detect else low_hz
+    effective_high = None if auto_detect else high_hz
+
     decode_upload_task.apply_async(
-        args=[
-            job_id,
-            saved_path,
-            low_hz if low_hz is not None else settings.DEFAULT_LOW_HZ,
-            high_hz if high_hz is not None else settings.DEFAULT_HIGH_HZ,
-        ],
+        args=[job_id, saved_path, effective_low, effective_high],
         task_id=job_id,
     )
 
@@ -102,6 +107,7 @@ def get_result(job_id: str, db: Session = Depends(get_db)):
         decoded_text=job.decoded_text,
         symbol_stream=job.symbol_stream,
         wpm_estimate=job.wpm_estimate,
+        detected_freq_hz=job.detected_freq_hz,
         warning=job.warning,
         error=job.error,
         original_filename=job.original_filename,

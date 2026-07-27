@@ -74,16 +74,26 @@
         <div class="panel-title"><i data-lucide="radio"></i> Frequency tuning</div>
         <p class="panel-subtitle">Sets the bandpass filter that isolates the CW tone from background noise before any decoding happens.</p>
 
-        <div class="field-group">
-          <label class="field-label" for="low-hz"><i data-lucide="arrow-down-narrow-wide"></i> Low cutoff (Hz)</label>
-          <input id="low-hz" type="number" value="700" placeholder="e.g. 700" />
-          <p class="field-help">Frequencies below this are filtered out. Lower it if your tone sits deeper than a typical CW pitch.</p>
+        <div class="field-group" style="display:flex; align-items:flex-start; gap:0.6rem;">
+          <input id="auto-detect-freq" type="checkbox" checked style="width:auto; margin-top:0.2rem;" />
+          <label for="auto-detect-freq" style="cursor:pointer;">
+            <span class="field-label" style="margin-bottom:0.15rem;"><i data-lucide="sparkles"></i> Auto-detect tone frequency (recommended)</span>
+            <p class="field-help" style="margin-top:0;">Scans the audio itself for the strongest plausible CW tone — works for any recording, at any pitch, without knowing it in advance. Turn this off only if you already know the exact frequency and auto-detect is picking the wrong tone.</p>
+          </label>
         </div>
 
-        <div class="field-group">
-          <label class="field-label" for="high-hz"><i data-lucide="arrow-up-narrow-wide"></i> High cutoff (Hz)</label>
-          <input id="high-hz" type="number" value="800" placeholder="e.g. 800" />
-          <p class="field-help">Frequencies above this are filtered out. Widen the gap between the two cutoffs if the pitch drifts during the recording; narrow it for a cleaner, quieter signal.</p>
+        <div id="manual-freq-fields" style="opacity:0.4; pointer-events:none;">
+          <div class="field-group">
+            <label class="field-label" for="low-hz"><i data-lucide="arrow-down-narrow-wide"></i> Low cutoff (Hz)</label>
+            <input id="low-hz" type="number" value="700" placeholder="e.g. 700" />
+            <p class="field-help">Frequencies below this are filtered out. Lower it if your tone sits deeper than a typical CW pitch.</p>
+          </div>
+
+          <div class="field-group">
+            <label class="field-label" for="high-hz"><i data-lucide="arrow-up-narrow-wide"></i> High cutoff (Hz)</label>
+            <input id="high-hz" type="number" value="800" placeholder="e.g. 800" />
+            <p class="field-help">Frequencies above this are filtered out. Widen the gap between the two cutoffs if the pitch drifts during the recording; narrow it for a cleaner, quieter signal.</p>
+          </div>
         </div>
       </div>
 
@@ -147,6 +157,7 @@
 
         <div style="display:flex; justify-content:space-between; align-items:center; margin:1rem 0 0.6rem; flex-wrap:wrap; gap:0.5rem;">
           <span class="readout-chip"><i data-lucide="gauge"></i> Estimated speed: <span id="wpm-label" class="readout-value">--</span></span>
+          <span class="readout-chip"><i data-lucide="radio"></i> Detected tone: <span id="freq-label" class="readout-value">--</span></span>
           <div style="display:flex; gap:0.5rem;">
             <button id="copy-batch-btn" class="icon-btn" title="Copy decoded text"><i data-lucide="copy"></i></button>
             <a id="export-txt" class="btn-secondary" href="#" title="Download as plain text"><i data-lucide="file-text"></i> .txt</a>
@@ -181,8 +192,9 @@
           <p class="field-help">Scrolls right to left. Brighter/warmer color = stronger signal at that frequency, right now.</p>
         </div>
 
-        <div style="display:flex; justify-content:space-between; align-items:center; margin:1rem 0 0.6rem;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin:1rem 0 0.6rem; flex-wrap:wrap; gap:0.5rem;">
           <span class="readout-chip"><i data-lucide="gauge"></i> Estimated speed: <span id="live-wpm-label" class="readout-value">--</span></span>
+          <span class="readout-chip"><i data-lucide="radio"></i> Detected tone: <span id="live-freq-label" class="readout-value">--</span></span>
           <button id="copy-live-btn" class="icon-btn" title="Copy live transcript"><i data-lucide="copy"></i></button>
         </div>
 

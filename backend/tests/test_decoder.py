@@ -42,6 +42,46 @@ def test_decode_at_10db_snr_floor():
     assert result.text == text
 
 
+def test_decode_survives_amplitude_fade():
+    """AGC stage: a deep mid-message fade (down to ~12% amplitude) should
+    still decode correctly, not just silently lose the faded letters."""
+    text = "CQ CQ DE TEST"
+    audio = synth.synthesize(text, wpm=20, freq_hz=800, sample_rate=SAMPLE_RATE, noise_amplitude=0.02)
+    n = len(audio)
+    fade = np.ones(n)
+    fade[n // 3: 2 * n // 3] = np.linspace(1.0, 0.12, (2 * n // 3) - (n // 3))
+    faded = audio * fade
+    faded = faded / np.max(np.abs(faded))
+    result = decoder.decode_audio(faded, SAMPLE_RATE)
+    assert result.text == text
+
+
+def test_decode_survives_impulsive_click_noise():
+    """Noise blanker stage: sharp clicks/static (3-6x the tone's own
+    amplitude) should be suppressed rather than corrupting the envelope."""
+    text = "HELLO WORLD"
+    audio = synth.synthesize(text, wpm=18, freq_hz=750, sample_rate=SAMPLE_RATE, noise_amplitude=0.02)
+    rng = np.random.default_rng(5)
+    clicks = np.zeros(len(audio))
+    for p in rng.integers(0, len(audio), 40):
+        clicks[p] = rng.choice([-1, 1]) * rng.uniform(3.0, 6.0)
+    noisy = audio + clicks
+    noisy = noisy / np.max(np.abs(noisy))
+    result = decoder.decode_audio(noisy, SAMPLE_RATE)
+    assert result.text == text
+
+
+def test_decode_auto_detects_frequency_outside_legacy_band():
+    """Auto-detection: must find and decode a tone well outside the old
+    hardcoded 700-800 Hz band, with no frequency hint given."""
+    text = "CQ DE TEST"
+    audio = synth.synthesize(text, wpm=18, freq_hz=1100, sample_rate=SAMPLE_RATE, noise_amplitude=0.04)
+    result = decoder.decode_audio(audio, SAMPLE_RATE)  # no low_hz/high_hz passed
+    assert result.text == text
+    assert result.detected_freq_hz is not None
+    assert abs(result.detected_freq_hz - 1100) < 15
+
+
 def test_empty_or_silent_audio_does_not_crash():
     silence = np.zeros(SAMPLE_RATE)  # 1s of pure silence
     result = decoder.decode_audio(silence, SAMPLE_RATE)

@@ -190,7 +190,18 @@ const progressBar = document.getElementById("progress-bar");
 const progressLabel = document.getElementById("progress-label");
 const terminalOutput = document.getElementById("terminal-output");
 const wpmLabel = document.getElementById("wpm-label");
+const freqLabel = document.getElementById("freq-label");
 const waveformCanvas = document.getElementById("waveform-canvas");
+const autoDetectCheckbox = document.getElementById("auto-detect-freq");
+const manualFreqFields = document.getElementById("manual-freq-fields");
+
+function syncAutoDetectUI() {
+  const auto = autoDetectCheckbox.checked;
+  manualFreqFields.style.opacity = auto ? "0.4" : "1";
+  manualFreqFields.style.pointerEvents = auto ? "none" : "auto";
+}
+autoDetectCheckbox.addEventListener("change", syncAutoDetectUI);
+syncAutoDetectUI();
 
 let currentJobId = null;
 
@@ -201,12 +212,15 @@ uploadBtn.addEventListener("click", async () => {
   terminalOutput.textContent = "";
   progressBar.style.width = "0%";
   progressLabel.textContent = "Uploading...";
+  freqLabel.textContent = "--";
   showLensEmpty();
 
+  const autoDetect = autoDetectCheckbox.checked;
   const { job_id } = await Api.uploadAudio(
     file,
     parseFloat(document.getElementById("low-hz").value),
     parseFloat(document.getElementById("high-hz").value),
+    autoDetect,
   );
   currentJobId = job_id;
 
@@ -229,6 +243,7 @@ uploadBtn.addEventListener("click", async () => {
 async function renderBatchResult(result, file) {
   terminalOutput.textContent = result.decoded_text || `(no text decoded) ${result.warning || ""}`;
   wpmLabel.textContent = result.wpm_estimate ? `${result.wpm_estimate} WPM` : "--";
+  freqLabel.textContent = result.detected_freq_hz ? `${result.detected_freq_hz} Hz` : "--";
 
   // draw waveform overlay using decoded events if available
   const arrayBuffer = await file.arrayBuffer();
