@@ -168,3 +168,5 @@ morse-decoder/
   deliberate architecture choice, not an oversight, and is worth
   explaining if a grader asks "why isn't the WebSocket path using
   Celery too?"
+
+- it now auto-detects and returns `result.detected_freq_hz`

@@ -46,11 +46,21 @@ Server (app/routers/stream.py):
     - append to a per-connection rolling buffer
     - compute an FFT magnitude frame → send back as {"type":"waterfall"}
       (this round-trip is what has to stay under ~250ms)
-    - check trailing silence duration
+    - check trailing silence over a small fixed-size tail window (not
+      the whole growing buffer -- see the performance note below),
+      auto-detecting the tone frequency for that check the same way
+      the real decode does (see §3), rather than assuming a fixed band
         if >= 1.4s (a safe word-boundary heuristic) and buffer has
         enough audio: run the full decode_audio() pipeline on the
-        buffered chunk, append its text to the session's running
-        transcript, send {"type":"partial_result"}, clear the buffer
+        buffered chunk (off the event loop, via asyncio.to_thread so
+        one connection's decode can't stall others), append its text
+        to the session's running transcript, send {"type":"partial_result"},
+        clear the buffer
+    - while audio is still flowing (no long silence yet), also re-decode
+      the rolling buffer on a ~1s throttle WITHOUT clearing it, and send
+      it as an {"interim": true} preview -- this is what lets the
+      operator see the message building up live instead of waiting
+      silently until a full word-boundary pause
 ```
 
 This deliberately does **not** try to decode symbol-by-symbol as bits
@@ -59,26 +69,73 @@ meaningful cluster boundary, and re-running it on every 30ms frame
 would be wasteful and noisy. Flushing on a word-boundary silence gap
 is the natural unit here: humans/software also pause between words.
 
+The trailing-silence check itself used to always filter a hardcoded
+700-800 Hz band, independent of whatever frequency the tone actually
+was — for any recording sent at a different pitch, that check was
+scanning silence in the wrong part of the spectrum the entire session.
+It now runs the same lightweight auto-detection as the real decode
+(a single Welch PSD pass, no multi-candidate retry needed just to
+pick a band to look at) so silence detection tracks the tone that's
+actually present.
+
 ## 3. The DSP/ML pipeline in detail
 
 ```
-raw samples
-  → normalize to [-1, 1]                          (preprocessing.py)
-  → 4th-order Butterworth bandpass (700-800Hz)     (preprocessing.py)
-  → Hilbert-transform envelope, light smoothing    (features.py)
-  → adaptive Schmitt-trigger threshold             (features.py)
-      (long window + hysteresis so a sustained dash
-       isn't mistaken for silence partway through it)
-  → run-length encode into (is_tone, duration) pulses
-  → K-Means (K=2) on "tone on" durations            (clustering.py)
-      → shortest-centroid cluster = dot, other = dash
-      → dot centroid ⇒ estimated WPM (PARIS standard: WPM = 1.2/dot_s)
-  → classify "tone off" gaps using thresholds anchored to the
-    K-Means-derived dot-unit (< 2 units = intra-char,
-    2-5 units = inter-char/letter, > 5 units = inter-word)
-  → assemble the dot/dash/gap sequence into a Morse symbol stream
-  → dictionary lookup → plain text                 (morse_map.py)
+raw samples (downmixed to mono)
+  → auto-detect candidate tone frequencies         (preprocessing.py,
+    (Welch PSD peaks, top 3 candidates,              decoder.py)
+     300-2000 Hz search band)
+    -- skipped entirely if the caller passes an
+       explicit low_hz/high_hz override
+
+  for each candidate frequency, run the full chain below and keep
+  whichever candidate produces a plausible keying duty cycle
+  (not near-0% = noise/silence, not near-100% = a continuous tone
+  or broadband noise rather than real keying):
+
+      → normalize to [-1, 1]                          (preprocessing.py)
+      → noise blanker: clip impulsive spikes           (preprocessing.py)
+        (clicks/static) against local RMS
+      → AGC: rescale to a consistent level over a       (preprocessing.py)
+        120ms window, so a fading/uneven-volume
+        recording doesn't drop below the detector's
+        noise floor partway through
+      → 4th-order Butterworth bandpass                 (preprocessing.py)
+        (±70Hz around the candidate frequency,
+         or an exact user-supplied band if given)
+      → Hilbert-transform envelope, light smoothing    (features.py)
+      → adaptive Schmitt-trigger threshold             (features.py)
+          (long window + hysteresis so a sustained dash
+           isn't mistaken for silence partway through it)
+      → run-length encode into (is_tone, duration) pulses
+      → K-Means (K=2) on "tone on" durations            (clustering.py)
+          → shortest-centroid cluster = dot, other = dash
+          → dot centroid ⇒ estimated WPM (PARIS standard: WPM = 1.2/dot_s)
+      → classify "tone off" gaps using thresholds anchored to the
+        K-Means-derived dot-unit (< 2 units = intra-char,
+        2-5 units = inter-char/letter, > 5 units = inter-word)
+      → assemble the dot/dash/gap sequence into a Morse symbol stream
+      → dictionary lookup → plain text                 (morse_map.py)
 ```
+
+**Why auto-detect the frequency at all, rather than requiring the user
+to set it:** real-world recordings (off-air audio, a YouTube CW
+practice clip, etc.) use whatever sidetone frequency the source
+happened to use — there's no universal "the" CW frequency. A fixed
+default band only ever worked by coincidence. Trying multiple
+candidates (not just the single loudest spectral bin) matters too:
+the loudest frequency in a noisy clip is sometimes hum, voice, or a
+compression artifact rather than the actual CW tone, so each candidate
+is validated against the real decode pipeline rather than trusted from
+the spectrum alone.
+
+**Why AGC and a noise blanker were added on top of the bandpass
+filter:** a bandpass filter alone assumes a reasonably consistent
+signal level and no impulsive artifacts, which real recordings don't
+guarantee. This mirrors the standard BPF → AGC → noise-blanker chain
+used by well-regarded CW decoders (e.g. the classic OZ1JHM
+Arduino/ESP32 CW decoder design, and real-time libraries like
+ggmorse) rather than being a bespoke addition.
 
 **Why gap classification is unit-anchored rather than its own flat
 K-Means pass:** a short transmission may contain zero inter-word gaps
@@ -102,6 +159,7 @@ User            1 ──< TranslationJob
                         original_filename
                         status (QUEUED/PROCESSING/DONE/FAILED)
                         decoded_text, symbol_stream, wpm_estimate
+                        detected_freq_hz
                         warning, error
                         created_at, completed_at
 ```
