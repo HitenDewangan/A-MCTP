@@ -165,22 +165,30 @@ profileForm.addEventListener("submit", async (event) => {
 // -------- Mode toggle --------
 const modeLive = document.getElementById("mode-live");
 const modeBatch = document.getElementById("mode-batch");
+const modeKeyer = document.getElementById("mode-keyer");
 const livePanel = document.getElementById("live-panel");
 const batchPanel = document.getElementById("batch-panel");
+const keyerPanel = document.getElementById("keyer-panel");
 const modeGlider = document.getElementById("mode-glider");
 const signalLens = document.getElementById("signal-lens");
 
 function setMode(mode) {
   const isLive = mode === "live";
+  const isBatch = mode === "batch";
+  const isKeyer = mode === "keyer";
   livePanel.classList.toggle("hidden", !isLive);
-  batchPanel.classList.toggle("hidden", isLive);
-  signalLens.classList.toggle("hidden", isLive);
+  batchPanel.classList.toggle("hidden", !isBatch);
+  keyerPanel.classList.toggle("hidden", !isKeyer);
+  signalLens.classList.toggle("hidden", !isBatch);
   modeLive.classList.toggle("active", isLive);
-  modeBatch.classList.toggle("active", !isLive);
+  modeBatch.classList.toggle("active", isBatch);
+  modeKeyer.classList.toggle("active", isKeyer);
   modeGlider.classList.toggle("live", isLive);
+  modeGlider.classList.toggle("keyer", isKeyer);
 }
 modeLive.addEventListener("click", () => setMode("live"));
 modeBatch.addEventListener("click", () => setMode("batch"));
+modeKeyer.addEventListener("click", () => setMode("keyer"));
 setMode("batch");
 
 // -------- Batch upload --------
@@ -429,6 +437,66 @@ document.getElementById("copy-live-btn").addEventListener("click", () => {
 });
 document.getElementById("copy-batch-btn").addEventListener("click", () => {
   navigator.clipboard.writeText(terminalOutput.textContent);
+});
+
+// -------- Keyer (keyboard/button Morse input, no audio involved) --------
+const keyerPaddle = document.getElementById("keyer-paddle");
+const keyerLamp = document.getElementById("keyer-lamp-indicator");
+const keyerTerminal = document.getElementById("keyer-terminal");
+const keyerWpmLabel = document.getElementById("keyer-wpm-label");
+const keyerCurrentSymbol = document.getElementById("keyer-current-symbol");
+
+const keyer = new MorseKeyer({
+  onSymbol: (symbol) => { keyerCurrentSymbol.textContent += symbol; },
+  onLetter: () => { keyerCurrentSymbol.textContent = ""; },
+  onWord: () => { keyerCurrentSymbol.textContent = ""; },
+  onText: (text) => { keyerTerminal.textContent = text; },
+  onWpmUpdate: (wpm) => { keyerWpmLabel.textContent = `${wpm} WPM`; },
+  onClear: () => { keyerWpmLabel.textContent = "--"; },
+});
+
+function keyerPress() {
+  keyerPaddle.classList.add("active");
+  keyerLamp.classList.add("on");
+  keyer.press();
+}
+function keyerRelease() {
+  keyerPaddle.classList.remove("active");
+  keyerLamp.classList.remove("on");
+  keyer.release();
+}
+
+keyerPaddle.addEventListener("mousedown", keyerPress);
+keyerPaddle.addEventListener("mouseup", keyerRelease);
+keyerPaddle.addEventListener("mouseleave", () => {
+  if (keyerPaddle.classList.contains("active")) keyerRelease();
+});
+keyerPaddle.addEventListener("touchstart", (event) => { event.preventDefault(); keyerPress(); }, { passive: false });
+keyerPaddle.addEventListener("touchend", (event) => { event.preventDefault(); keyerRelease(); }, { passive: false });
+
+// Spacebar keying, only while the keyer panel is active and focus isn't in a text field.
+document.addEventListener("keydown", (event) => {
+  if (keyerPanel.classList.contains("hidden") || event.code !== "Space" || event.repeat) return;
+  const tag = document.activeElement && document.activeElement.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA") return;
+  event.preventDefault();
+  keyerPress();
+});
+document.addEventListener("keyup", (event) => {
+  if (keyerPanel.classList.contains("hidden") || event.code !== "Space") return;
+  const tag = document.activeElement && document.activeElement.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA") return;
+  event.preventDefault();
+  keyerRelease();
+});
+
+document.getElementById("keyer-flush-btn").addEventListener("click", () => keyer.flush());
+document.getElementById("keyer-clear-btn").addEventListener("click", () => {
+  keyer.clear();
+  keyerCurrentSymbol.textContent = "";
+});
+document.getElementById("copy-keyer-btn").addEventListener("click", () => {
+  navigator.clipboard.writeText(keyerTerminal.textContent);
 });
 
 // -------- Reverse synthesis --------

@@ -412,13 +412,60 @@ input:focus, select:focus {
   top: 4px;
   bottom: 4px;
   left: 4px;
-  width: calc(50% - 4px);
+  width: calc(33.333% - 2.667px);
   background: linear-gradient(160deg, var(--phosphor), var(--phosphor-dim));
   border-radius: 999px;
   transition: transform 0.35s cubic-bezier(.2,.8,.2,1);
   box-shadow: 0 6px 16px -6px rgba(94, 234, 212, 0.5);
 }
 .mode-toggle-glider.live { transform: translateX(100%); }
+.mode-toggle-glider.keyer { transform: translateX(200%); }
+
+/* ---------------- Keyer paddle ---------------- */
+
+.keyer-paddle {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 1rem 1.75rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--glass-border);
+  background: rgba(148, 197, 197, 0.08);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+  transition: background 0.12s ease, transform 0.08s ease, box-shadow 0.12s ease;
+}
+.keyer-paddle:hover { border-color: var(--glass-border-hover); }
+.keyer-paddle.active {
+  background: linear-gradient(160deg, var(--phosphor), var(--phosphor-dim));
+  color: #04211d;
+  transform: translateY(1px) scale(0.98);
+  box-shadow: 0 0 18px rgba(94, 234, 212, 0.55);
+}
+
+.keyer-paddle-lamp {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--ink-faint);
+  flex-shrink: 0;
+}
+.keyer-paddle-lamp.on {
+  background: var(--phosphor);
+  box-shadow: 0 0 10px rgba(94, 234, 212, 0.8);
+}
+
+.keyer-current-symbol {
+  min-width: 2.5em;
+  display: inline-block;
+  letter-spacing: 0.1em;
+}
 
 /* ---------------- Panels / cards ---------------- */
 
